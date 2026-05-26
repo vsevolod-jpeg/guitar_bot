@@ -2,7 +2,7 @@ import asyncio
 import sqlite3
 import logging
 from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ChatMember
 from aiogram.filters import CommandStart, Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -20,16 +20,14 @@ VIDEO_IDS = {
 }
 
 # Фото
-PHOTO_WELCOME = "AgACAgIAAxkBAANEahW1iaIxp_1jvfgTjJJ1ubs_j-AAAlQdaxuwAqlIxLCHxoLyYoABAAMCAAN3AAM7BA"
-PHOTO_LESSON_1 = "AgACAgIAAxkBAANNahW2ZPREYnk1U2SUwey8FBVMOzUAAlgdaxuwAqlIYjb8KU8XvYsBAAMCAAN4AAM7BA"
-PHOTO_LESSON_2 = "AgACAgIAAxkBAANNahW2ZPREYnk1U2SUwey8FBVMOzUAAlgdaxuwAqlIYjb8KU8XvYsBAAMCAAN4AAM7BA"
+PHOTO_WELCOME    = "AgACAgIAAxkBAANEahW1iaIxp_1jvfgTjJJ1ubs_j-AAAlQdaxuwAqlIxLCHxoLyYoABAAMCAAN3AAM7BA"
+PHOTO_LESSON_1   = "AgACAgIAAxkBAANNahW2ZPREYnk1U2SUwey8FBVMOzUAAlgdaxuwAqlIYjb8KU8XvYsBAAMCAAN4AAM7BA"
+PHOTO_LESSON_2   = "AgACAgIAAxkBAANNahW2ZPREYnk1U2SUwey8FBVMOzUAAlgdaxuwAqlIYjb8KU8XvYsBAAMCAAN4AAM7BA"
 
 CONTACT_LINK = "https://t.me/tajiiiikkkk"
 ADMIN_ID = 806817338
 CHANNEL_USERNAME = "@vsevolod_gitara"
 
-# Добавляем ID канала без @ для проверки
-CHANNEL_ID = "vsevolod_gitara"
 # ─────────────────────────────────────────────
 
 logging.basicConfig(level=logging.INFO)
@@ -82,7 +80,6 @@ FINAL_TEXT = (
     "Записывайся на пробное занятие. Я помогу тебе достичь твоей цели."
 )
 
-
 # ─── База данных ──────────────────────────────
 def init_db():
     conn = sqlite3.connect("progress.db")
@@ -122,11 +119,8 @@ def set_progress(user_id: int, lesson_index: int):
 
 
 def reset_progress(user_id: int):
-    """Полный сброс прогресса пользователя"""
     conn = sqlite3.connect("progress.db")
-    conn.execute(
-        "DELETE FROM user_progress WHERE user_id = ?", (user_id,)
-    )
+    conn.execute("DELETE FROM user_progress WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
 
@@ -149,33 +143,47 @@ def final_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-# ─── Проверка подписки ───────────────────────
-async def is_subscribed(bot: Bot, user_id: int) -> bool:
-    try:
-        # Пробуем через username с @
-        member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        return member.status not in ("left", "kicked")
-    except Exception as e:
-        logging.error(f"Ошибка проверки подписки для {user_id}: {e}")
-        return False
-
-
 def subscribe_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_ID}")],
+            [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://t.me/vsevolod_gitara")],
             [InlineKeyboardButton(text="✅ Я подписался", callback_data="check_subscription")],
         ]
     )
 
 
+# ─── Проверка подписки (исправленная версия) ───
+async def is_subscribed(bot: Bot, user_id: int) -> bool:
+    """Проверяет, подписан ли пользователь на канал."""
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        
+        # Логируем статус для отладки
+        print(f"Проверка статуса пользователя {user_id}: {member.status}")
+        
+        # Правильная проверка: пользователь считается подписанным, если он
+        # - создатель (creator), администратор (administrator)
+        # - обычный участник (member)
+        # - ограниченный участник, но при этом является членом группы (restricted, но is_member=True)
+        if member.status in (ChatMember.Status.CREATOR,
+                             ChatMember.Status.ADMINISTRATOR,
+                             ChatMember.Status.MEMBER):
+            return True
+        elif member.status == ChatMember.Status.RESTRICTED:
+            return member.is_member
+        else:
+            return False
+            
+    except Exception as e:
+        print(f"Ошибка проверки подписки для {user_id}: {e}")
+        return False
+
+
 # ─── Функция отправки стартового сообщения ───
 async def send_start_message(target, user_id: int):
-    """Отправляет приветствие и первый урок. target может быть Message или CallbackQuery"""
     progress = get_progress(user_id)
-
+    
     if progress == -1:
-        # Новый пользователь — отправляем фото с приветствием
         await target.answer_photo(
             photo=PHOTO_WELCOME,
             caption=(
@@ -205,7 +213,7 @@ router = Router()
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     user_id = message.from_user.id
-
+    
     if await is_subscribed(message.bot, user_id):
         await send_start_message(message, user_id)
     else:
@@ -220,18 +228,16 @@ async def cmd_start(message: Message):
 @router.message(Command("restart"))
 async def cmd_restart(message: Message):
     user_id = message.from_user.id
-
+    
     if not await is_subscribed(message.bot, user_id):
         await message.answer(
             "👋 Чтобы получить курс, подпишись на мой канал.",
             reply_markup=subscribe_keyboard(),
         )
         return
-
-    # Полностью удаляем пользователя из базы
+    
     reset_progress(user_id)
-
-    # Отправляем приветствие с самого начала
+    
     await message.answer_photo(
         photo=PHOTO_WELCOME,
         caption=(
@@ -247,39 +253,39 @@ async def cmd_restart(message: Message):
 @router.callback_query(F.data == "check_subscription")
 async def check_sub_callback(callback: CallbackQuery):
     user_id = callback.from_user.id
-
+    
     if not await is_subscribed(callback.bot, user_id):
         await callback.answer("❌ Ты ещё не подписан. Подпишись и нажми кнопку снова.", show_alert=True)
         return
-
+    
     await callback.answer("✅ Подписка подтверждена! Загружаю курс...", show_alert=False)
-
+    
     try:
         await callback.message.delete()
     except Exception:
-        pass  # Если не удалось удалить — ничего страшного
-
+        pass
+    
     await send_start_message(callback.message, user_id)
 
 
 @router.callback_query(F.data.startswith("lesson_"))
 async def handle_lesson(callback: CallbackQuery):
     user_id = callback.from_user.id
-
+    
     if not await is_subscribed(callback.bot, user_id):
         await callback.answer("❌ Сначала подпишись на канал!", show_alert=True)
         return
-
+    
     lesson_index = int(callback.data.split("_")[1])
     progress = get_progress(user_id)
-
+    
     if lesson_index > progress + 1:
         await callback.answer("Сначала посмотри предыдущие уроки.", show_alert=True)
         return
-
+    
     lesson = LESSONS[lesson_index]
     video_id = VIDEO_IDS[lesson_index]
-
+    
     if lesson["photo"]:
         await callback.message.answer_photo(
             photo=lesson["photo"],
@@ -287,12 +293,12 @@ async def handle_lesson(callback: CallbackQuery):
         )
     else:
         await callback.message.answer(lesson["text"])
-
+    
     await callback.message.answer_video(video=video_id)
-
+    
     if lesson_index > progress:
         set_progress(user_id, lesson_index)
-
+    
     if lesson_index < len(LESSONS) - 1:
         next_index = lesson_index + 1
         await callback.message.answer(
@@ -301,7 +307,7 @@ async def handle_lesson(callback: CallbackQuery):
         )
     else:
         await callback.message.answer(FINAL_TEXT, reply_markup=final_keyboard())
-
+    
     await callback.answer()
 
 
