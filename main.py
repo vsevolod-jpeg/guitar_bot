@@ -154,28 +154,32 @@ def subscribe_keyboard() -> InlineKeyboardMarkup:
 
 # ─── Проверка подписки (исправленная версия) ───
 async def is_subscribed(bot: Bot, user_id: int) -> bool:
-    """Проверяет, подписан ли пользователь на канал."""
+    """
+    Проверяет, подписан ли пользователь на канал.
+    Отправляет владельцу (тебе) диагностическое сообщение при ошибке.
+    """
     try:
+        # Пытаемся получить информацию о пользователе в канале
         member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
         
-        # Логируем статус для отладки
-        print(f"Проверка статуса пользователя {user_id}: {member.status}")
+        # Пишем в консоль (логи bothost.ru), что мы получили от Telegram
+        print(f"DEBUG: Статус пользователя {user_id}: {member.status}")
         
-        # Правильная проверка: пользователь считается подписанным, если он
-        # - создатель (creator), администратор (administrator)
-        # - обычный участник (member)
-        # - ограниченный участник, но при этом является членом группы (restricted, но is_member=True)
-        if member.status in (ChatMember.Status.CREATOR,
-                             ChatMember.Status.ADMINISTRATOR,
-                             ChatMember.Status.MEMBER):
+        # Проверяем статус
+        if member.status in ("member", "creator", "administrator"):
             return True
-        elif member.status == ChatMember.Status.RESTRICTED:
-            return member.is_member
         else:
+            # Отправляем диагностику ТЕБЕ (владельцу)
+            await bot.send_message(
+                chat_id=YOUR_USER_ID,  # ТВОЙ ID
+                text=f"❌ Пользователь {user_id} не подписан. Его статус: {member.status}"
+            )
             return False
-            
     except Exception as e:
-        print(f"Ошибка проверки подписки для {user_id}: {e}")
+        # Если произошла ошибка, пишем в консоль и отправляем тебе
+        error_text = f"🚨 ОШИБКА проверки для {user_id}: {e}"
+        print(error_text)
+        await bot.send_message(chat_id=YOUR_USER_ID, text=error_text)
         return False
 
 
