@@ -146,40 +146,18 @@ def final_keyboard() -> InlineKeyboardMarkup:
 def subscribe_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://t.me/vsevolod_gitara")],
+            [InlineKeyboardButton(text="📢 Подписаться на канал", url="https://t.me/vsevolod_gitara")],
             [InlineKeyboardButton(text="✅ Я подписался", callback_data="check_subscription")],
         ]
     )
 
 
-# ─── Проверка подписки (исправленная версия) ───
+# ─── Проверка подписки (простая рабочая версия) ───
 async def is_subscribed(bot: Bot, user_id: int) -> bool:
-    """
-    Проверяет, подписан ли пользователь на канал.
-    Отправляет владельцу (тебе) диагностическое сообщение при ошибке.
-    """
     try:
-        # Пытаемся получить информацию о пользователе в канале
         member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        
-        # Пишем в консоль (логи bothost.ru), что мы получили от Telegram
-        print(f"DEBUG: Статус пользователя {user_id}: {member.status}")
-        
-        # Проверяем статус
-        if member.status in ("member", "creator", "administrator"):
-            return True
-        else:
-            # Отправляем диагностику ТЕБЕ (владельцу)
-            await bot.send_message(
-                chat_id=YOUR_USER_ID,  # ТВОЙ ID
-                text=f"❌ Пользователь {user_id} не подписан. Его статус: {member.status}"
-            )
-            return False
-    except Exception as e:
-        # Если произошла ошибка, пишем в консоль и отправляем тебе
-        error_text = f"🚨 ОШИБКА проверки для {user_id}: {e}"
-        print(error_text)
-        await bot.send_message(chat_id=YOUR_USER_ID, text=error_text)
+        return member.status in ("member", "creator", "administrator")
+    except Exception:
         return False
 
 
